@@ -1,0 +1,152 @@
+# Certificate Generator - User Guide
+
+## Overview
+
+This script generates personalized certificates for participants and automatically sends them via email. The configuration is handled through JSON files, making it easy to use without any coding knowledge.
+
+## Prerequisites
+
+Before running the script, ensure you have the following installed on your system:
+
+- Python 3.x
+- Required Python libraries (install using the command below)
+- A properly formatted CSV file with participant details
+
+## Installation
+
+### 1. Download and Install Python
+
+If you don’t have Python installed, download and install it from [python.org](https://www.python.org/downloads/).
+
+### 2. Install Required Libraries
+
+Open a terminal or command prompt and run:
+
+```
+pip install pandas smtplib fpdf
+```
+
+### 3. Folder Structure
+
+Ensure your project folder contains the following structure:
+
+```
+project_folder/
+├── config/
+│   ├── smtp_config.json
+│   ├── email_config.json
+│   ├── debug_mode.json
+│   ├── content_config.json
+├── fonts/
+│   ├── Lato2OFL/
+│   │   ├── Lato-Black.ttf
+├── background/
+│   ├── fancyone.jpg
+├── certificates/ (This will be auto-created when running the script)
+├── participants.csv
+├── script.py
+```
+
+## Configuration
+
+The script is fully configurable through JSON files located in the `config` folder.
+
+### 1. SMTP Configuration (`config/smtp_config.json`)
+
+This file contains SMTP server settings to send emails.
+
+```json
+{
+  "smtp_server": "smtp.dpoczta.pl",
+  "smtp_port": "587",
+  "email_sender": "kontakt@eletive.pl",
+  "email_password": "your_password"
+}
+```
+
+**Important:** Replace `your_password` with the actual email password.
+
+### 2. Email Content Configuration (`config/email_config.json`)
+
+Customize the subject and body of the email. (use html body)
+
+```json
+{
+  "subject": "Twój Certyfikat Uczestnictwa",
+  "body": "<h2>Cześć {name},</h2><p>W załączniku znajdziesz swój <strong>certyfikat uczestnictwa</strong>.</p><p>Pozdrawiamy!</p>"
+}
+```
+
+The `{name}` placeholder will be replaced with the participant’s name.
+
+### 3. Debug Mode (`config/debug_mode.json`)
+
+Enables or disables email sending for testing purposes.
+
+```json
+{
+  "debug_mode": "T"
+}
+```
+
+- **"T"** (Test Mode) – Certificates will be generated but not sent.
+- **"F"** (Full Mode) – Certificates will be generated and sent via email.
+
+### 4. Certificate Design (`config/content_config.json`)
+
+Controls the certificate appearance.
+
+```json
+{
+    "font_path": "./fonts/Lato2OFL/Lato-Black.ttf",
+    "font_size": 32,
+    "text_height": 160,
+    "background_image": "./background/fancyone.jpg",
+    "orientation": "L"
+}
+```
+
+- `font_path`: Path to the font used.
+- `font_size`: Size of the text on the certificate.
+- `text_height`: Position of the text on the certificate.
+- `background_image`: Background image for the certificate.
+- `orientation`: "L" for landscape, "P" for portrait.
+
+## CSV File Format
+
+The script reads participant data from a CSV file (`participants.csv`). The file must follow this format:
+
+```
+FirstName,LastName,Email
+John,Doe,john.doe@example.com
+Jane,Smith,jane.smith@example.com
+```
+
+## Running the Script
+
+1. Open a terminal or command prompt.
+2. Navigate to the project directory:
+   
+   ```
+   cd /path/to/project_folder
+   ```
+
+3. Run the script:
+   
+   ```
+   python script.py
+   ```
+
+## Troubleshooting
+
+### Common Issues
+
+- **SMTP Authentication Error:**
+  - Ensure the email and password in `smtp_config.json` are correct.
+  - Some email providers require an app password or less secure app access enabled.
+- **Missing Fonts or Background Image:**
+  - Check if the font file and background image exist in the specified paths.
+- **Certificates Not Generated:**
+  - Ensure the CSV file is formatted correctly.
+- **Emails Not Sent:**
+  - If `debug_mode.json` is set to "T", change it to "F" and retry.
