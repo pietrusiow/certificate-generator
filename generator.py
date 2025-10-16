@@ -71,13 +71,11 @@ def prepare_email_content(receiver_email, name, attachment_path):
     msg = MIMEMultipart()
     msg["From"] = email_sender
     msg["To"] = receiver_email
-    # "Twój Certyfikat Uczestnictwa"
     msg["Subject"] = email_config["subject"]
 
 
     # Email body
-    # f"Cześć {name},\n\nW załączniku znajdziesz swój certyfikat uczestnictwa.\n\nPozdrawiamy!"
-    body = email_config["body"].format(name=name)  # Użycie .format() do podstawienia wartości
+    body = email_config["body"].format(name=name)
     msg.attach(MIMEText(body, "html"))
 
     filename = os.path.basename(attachment_path)  # Get the file name (e.g., "certificate.pdf")
@@ -106,7 +104,7 @@ def send_email(receiver_email, msg):
         logging.error(f"Error when sending email to: {receiver_email}: {e}")
 
 
-# Wczytanie danych z CSV i przetworzenie ich
+# Load data from the CSV and generate certificates
 def process_csv(file_path):
     data = pd.read_csv(file_path)
     for index, row in data.iterrows():

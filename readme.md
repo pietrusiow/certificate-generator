@@ -72,8 +72,8 @@ Customize the subject and body of the email. (use html body)
 
 ```json
 {
-  "subject": "Twój Certyfikat Uczestnictwa",
-  "body": "<h2>Cześć {name},</h2><p>W załączniku znajdziesz swój <strong>certyfikat uczestnictwa</strong>.</p><p>Pozdrawiamy!</p>"
+  "subject": "Your Participation Certificate",
+  "body": "<h2>Hello {name},</h2><p>Your <strong>participation certificate</strong> is attached.</p><p>Best regards!</p>"
 }
 ```
 
