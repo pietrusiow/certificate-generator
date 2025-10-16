@@ -57,9 +57,9 @@ This file contains SMTP server settings to send emails.
 
 ```json
 {
-  "smtp_server": "smtp.dpoczta.pl",
+  "smtp_server": "smtp.email.com",
   "smtp_port": "587",
-  "email_sender": "kontakt@eletive.pl",
+  "email_sender": "name@domain.com",
   "email_password": "your_password"
 }
 ```
