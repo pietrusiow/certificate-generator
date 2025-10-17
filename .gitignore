@@ -1,0 +1,11 @@
+# Asset files
+background/
+fonts/
+certificates/
+
+# Configuration files
+config/*.json
+
+# Logs
+logging.log
+*.log

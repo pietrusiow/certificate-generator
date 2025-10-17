@@ -19,6 +19,8 @@ logging.basicConfig(
         logging.FileHandler('logging.log'),  # Info log file
     ]
 )
+# Silence verbose fontTools logs emitted during font subsetting.
+logging.getLogger("fontTools").setLevel(logging.WARNING)
 
 # Function to load and merge multiple configuration files
 def load_config(config_files):
@@ -38,26 +40,30 @@ def calculate_text_center(pdf, text, page_width):
 
 def generate_certificate(name, surname, email):
 
-    if content_config["orientation"] == "L":
-        pdf = FPDF(orientation="L")
-        page_width, page_height = 297, 210  # A4 Landscape
-    else:
-        pdf = FPDF()
-        page_width, page_height = 210, 297  # A4 Portrait
-
-    pdf.set_auto_page_break(auto=True, margin=15)
+    orientation = content_config.get("orientation", "L").upper()
+    pdf = FPDF(orientation=orientation, unit="mm", format="A4")
+    pdf.set_auto_page_break(auto=False)
+    pdf.set_margins(0, 0, 0)
     pdf.add_page()
+    page_width, page_height = pdf.w, pdf.h
 
     background_image = content_config["background_image"]
+    if not os.path.exists(background_image):
+        logging.error("Background image not found at %s while creating certificate for %s", background_image, email)
+        raise FileNotFoundError(f"Background image not found: {background_image}")
     pdf.image(background_image, x=0, y=0, w=page_width, h=page_height)
 
-    pdf.add_font("MyFont", "", content_config["font_path"], uni=True)
+    font_path = content_config["font_path"]
+    if not os.path.exists(font_path):
+        logging.error("Font file not found at %s while creating certificate for %s", font_path, email)
+        raise FileNotFoundError(f"Font file not found: {font_path}")
+    pdf.add_font("MyFont", "", font_path)
     pdf.set_font("MyFont", "", content_config["font_size"])
 
     full_name = f"{name} {surname}"
     name_x = calculate_text_center(pdf, full_name, page_width)
-    pdf.set_x(name_x)  # Centered horizontally
-    pdf.cell(pdf.get_string_width(full_name),  content_config["text_height"], full_name)
+    pdf.set_xy(name_x, content_config["text_height"])
+    pdf.cell(pdf.get_string_width(full_name), content_config["font_size"] * 1.5, full_name)
     filename = f"./certificates/{name}_{surname}.pdf"
     os.makedirs("certificates", exist_ok=True)
 
@@ -110,7 +116,8 @@ def process_csv(file_path):
     for index, row in data.iterrows():
         name, surname, receiver_email = row["FirstName"], row["LastName"], row["Email"]
         pdf_path = generate_certificate(name, surname, receiver_email)
-        if debug_mode["debug_mode"] != "F":
+        print(f"Debug Mode: {debug_mode['debug_mode']}")
+        if debug_mode["debug_mode"] == "F":
             msg = prepare_email_content(receiver_email, name, pdf_path)
             send_email(receiver_email, msg)
 

@@ -1,6 +1,0 @@
-{
-  "smtp_server": "smtp.mail.com",
-  "smtp_port": "587",
-  "email_sender": "noreplay@domain.com",
-  "email_password": "pass"
-}

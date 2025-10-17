@@ -18,21 +18,45 @@ Before running the script, ensure you have the following installed on your syste
 
 If you don’t have Python installed, download and install it from [python.org](https://www.python.org/downloads/).
 
-### 2. Install Required Libraries
+### 2. Create and Activate a Virtual Environment
 
-Open a terminal or command prompt and run:
+Creating an isolated Python environment keeps the project dependencies separate from your global Python installation.
 
 ```
-pip install pandas smtplib fpdf
+python -m venv .venv
 ```
 
-### 3. Folder Structure
+Activate the environment before installing packages:
+
+- **Windows (PowerShell):**
+  ```
+  .\.venv\Scripts\Activate.ps1
+  ```
+- **macOS/Linux (bash/zsh):**
+  ```
+  source .venv/bin/activate
+  ```
+
+### 3. Install Required Libraries
+
+With the virtual environment active, install the dependencies:
+
+```
+pip install pandas fpdf2
+```
+
+### 4. Folder Structure
 
 Ensure your project folder contains the following structure:
 
 ```
 project_folder/
 ├── config/
+│   ├── smtp_config.json
+│   ├── email_config.json
+│   ├── debug_mode.json
+│   ├── content_config.json
+├── example_config/
 │   ├── smtp_config.json
 │   ├── email_config.json
 │   ├── debug_mode.json
@@ -46,6 +70,18 @@ project_folder/
 ├── participants.csv
 ├── script.py
 ```
+
+## Using the Example Configuration
+
+The `example_config` folder provides a ready-to-use starting point for all required configuration files. If you are setting up the project for the first time, copy these files into the `config` directory so the script can find them:
+
+```
+copy example_config\*.json config\
+```
+
+- Update the copied files with your own SMTP credentials, email content, and certificate layout.
+- The example files include safe defaults (e.g., `debug_mode` is set to `"T"`), so you can run a dry run before sending real emails.
+- The script always reads files from the `config` directory; keeping `example_config` untouched makes it easy to reset or compare your custom settings later.
 
 ## Configuration
 
@@ -134,7 +170,7 @@ Jane,Smith,jane.smith@example.com
 3. Run the script:
    
    ```
-   python script.py
+   python generator.py
    ```
 
 ## Troubleshooting
