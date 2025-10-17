@@ -64,6 +64,53 @@ def calculate_text_center(pdf, text, page_width):
     x_position = (page_width - text_width) / 2  # Center horizontally
     return x_position
 
+
+def resolve_text_baseline(pdf, config):
+    """
+    Determine the baseline Y-coordinate (in mm) for the recipient name.
+    Uses the explicit text_y value when present; otherwise falls back to the font height.
+    """
+    raw_baseline = config.get("text_y")
+    if raw_baseline is not None:
+        try:
+            return float(raw_baseline)
+        except (TypeError, ValueError):
+            logging.warning("Invalid text_y value in content config: %s", raw_baseline)
+
+    logging.warning("Falling back to baseline equal to font height; configure text_y for precise placement.")
+    return pdf.font_size
+
+
+def parse_hex_color(color_code):
+    if not color_code:
+        return None
+
+    value = str(color_code).strip()
+    if value.startswith("#"):
+        value = value[1:]
+
+    if len(value) == 3:
+        value = "".join(ch * 2 for ch in value)
+
+    if len(value) != 6:
+        logging.warning("Invalid text_color value '%s'; expected #RRGGBB or #RGB.", color_code)
+        return None
+
+    try:
+        r = int(value[0:2], 16)
+        g = int(value[2:4], 16)
+        b = int(value[4:6], 16)
+        return r, g, b
+    except ValueError:
+        logging.warning("Invalid text_color value '%s'; expected hexadecimal digits.", color_code)
+        return None
+
+
+def apply_text_color(pdf, color_code):
+    rgb = parse_hex_color(color_code)
+    if rgb:
+        pdf.set_text_color(*rgb)
+
 def generate_certificate(name, surname, email):
 
     orientation = content_config.get("orientation", "L").upper()
@@ -88,8 +135,9 @@ def generate_certificate(name, surname, email):
 
     full_name = f"{name} {surname}"
     name_x = calculate_text_center(pdf, full_name, page_width)
-    pdf.set_xy(name_x, content_config["text_height"])
-    pdf.cell(pdf.get_string_width(full_name), content_config["font_size"] * 1.5, full_name)
+    apply_text_color(pdf, content_config.get("text_color"))
+    baseline_y = resolve_text_baseline(pdf, content_config)
+    pdf.text(name_x, baseline_y, full_name)
     filename = f"./certificates/{name}_{surname}.pdf"
     os.makedirs("certificates", exist_ok=True)
 

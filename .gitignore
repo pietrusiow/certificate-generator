@@ -9,3 +9,5 @@ config/*.json
 # Logs
 logging.log
 *.log
+
+__pycache__/

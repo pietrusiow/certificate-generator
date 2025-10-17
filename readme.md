@@ -137,15 +137,15 @@ Controls the certificate appearance.
 {
     "font_path": "./fonts/Lato2OFL/Lato-Black.ttf",
     "font_size": 32,
-    "text_height": 160,
     "background_image": "./background/fancyone.jpg",
+    "text_y": 192,
     "orientation": "L"
 }
 ```
 
 - `font_path`: Path to the font used.
 - `font_size`: Size of the text on the certificate.
-- `text_height`: Position of the text on the certificate.
+- `text_y`: Baseline (in millimetres) where the recipient's name is drawn.
 - `background_image`: Background image for the certificate.
 - `orientation`: "L" for landscape, "P" for portrait.
 
@@ -168,7 +168,15 @@ Jane,Smith,jane.smith@example.com
    cd /path/to/project_folder
    ```
 
-3. Run the script:
+3. Review or tweak the certificate layout using the GUI helper:
+   
+   ```
+   python config_gui.py
+   ```
+   
+   This lets you preview the background, adjust font settings, and save the updated `content_config.json`.
+
+4. Generate certificates (and optionally send emails):
    
    ```
    python generator.py

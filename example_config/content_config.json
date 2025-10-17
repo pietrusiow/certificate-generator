@@ -1,7 +1,7 @@
 {
     "font_path": "./fonts/Lato2OFL/Lato-Black.ttf",
     "font_size": 32,
-    "text_height": 160,
     "background_image": "./background/fancyone.jpg",
+    "text_y": 192,
     "orientation": "L"
 }
