@@ -5,6 +5,7 @@ import smtplib
 import os
 import json
 import logging
+import time
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -31,6 +32,31 @@ def load_config(config_files):
             # Merge the current config with the main config
             config.update(current_config)
     return config
+
+
+def resolve_debug_mode(debug_mode_config):
+    """
+    Normalize the debug mode setting so the caller can decide whether to send emails.
+    Accepts legacy values like 'T'/'F' alongside the new 'Test'/'Full' strings.
+    """
+    raw_value = debug_mode_config.get("debug_mode")
+    normalized = str(raw_value).strip().lower()
+
+    mapping = {
+        "full": ("Full", True),
+        "f": ("Full", True),
+        "true": ("Full", True),
+        "test": ("Test", False),
+        "t": ("Test", False),
+        "false": ("Test", False),
+    }
+
+    if normalized in mapping:
+        return mapping[normalized]
+
+    raise ValueError(
+        f"Unsupported debug_mode value: {raw_value}. Expected 'Test' or 'Full'."
+    )
 
 def calculate_text_center(pdf, text, page_width):
     """Calculate the X position to center text."""
@@ -111,13 +137,28 @@ def send_email(receiver_email, msg):
 
 
 # Load data from the CSV and generate certificates
-def process_csv(file_path):
+def process_csv(file_path, debug_mode_label, should_send_email):
     data = pd.read_csv(file_path)
-    for index, row in data.iterrows():
+    total = len(data.index)
+
+    if total == 0:
+        logging.warning("No participants found in %s", file_path)
+        return
+
+    print(f"Debug Mode: {debug_mode_label}")
+
+    for position, (_, row) in enumerate(data.iterrows(), start=1):
         name, surname, receiver_email = row["FirstName"], row["LastName"], row["Email"]
         pdf_path = generate_certificate(name, surname, receiver_email)
-        print(f"Debug Mode: {debug_mode['debug_mode']}")
-        if debug_mode["debug_mode"] == "F":
+        logging.info(
+            "Progress: %d/%d (%.1f%%) certificates prepared",
+            position,
+            total,
+            (position / total) * 100,
+        )
+        print(f"Progress: {position}/{total} ({(position / total) * 100:.1f}%) certificates prepared")
+
+        if should_send_email:
             msg = prepare_email_content(receiver_email, name, pdf_path)
             send_email(receiver_email, msg)
 
@@ -131,6 +172,7 @@ if __name__ == "__main__":
     email_config = load_config(email_config_files)
     smtp_config = load_config(smtp_config_files)
     debug_mode = load_config(debug_mode_files)
+    debug_mode_label, should_send_email = resolve_debug_mode(debug_mode)
 
     smtp_server = smtp_config["smtp_server"]
     smtp_port = smtp_config["smtp_port"]
@@ -138,5 +180,5 @@ if __name__ == "__main__":
     email_password = smtp_config["email_password"]
 
     csv_file = "participants.csv"
-    process_csv(csv_file)
+    process_csv(csv_file, debug_mode_label, should_send_email)
 

@@ -121,12 +121,13 @@ Enables or disables email sending for testing purposes.
 
 ```json
 {
-  "debug_mode": "T"
+  "debug_mode": "Test"
 }
 ```
 
-- **"T"** (Test Mode) – Certificates will be generated but not sent.
-- **"F"** (Full Mode) – Certificates will be generated and sent via email.
+- **"Test"** mode – Certificates will be generated but not emailed.
+- **"Full"** mode – Certificates will be generated and sent via email.
+- Legacy values `"T"` and `"F"` are still recognized for backward compatibility.
 
 ### 4. Certificate Design (`config/content_config.json`)
 
