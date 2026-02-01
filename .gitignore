@@ -2,6 +2,7 @@
 background/
 fonts/
 certificates/
+participants.csv
 
 # Configuration files
 config/*.json

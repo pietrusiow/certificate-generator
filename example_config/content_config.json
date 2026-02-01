@@ -3,5 +3,11 @@
     "font_size": 32,
     "background_image": "./background/fancyone.jpg",
     "text_y": 192,
+    "long_name_threshold": 16,
+    "long_name_font_size": 28,
+    "long_name_text_y": 188,
+    "split_name_threshold": 24,
+    "split_name_font_size": 28,
+    "split_name_text_y": 188,
     "orientation": "L"
 }
