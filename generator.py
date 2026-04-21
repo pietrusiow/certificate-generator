@@ -6,6 +6,7 @@ import os
 import json
 import logging
 import time
+import traceback
 
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
@@ -226,7 +227,59 @@ def apply_text_color(pdf, color_code):
     if rgb:
         pdf.set_text_color(*rgb)
 
-def generate_certificate(name, surname, email):
+
+def normalize_optional_text(value):
+    if pd.isna(value):
+        return ""
+    return str(value).strip()
+
+
+def draw_additional_text(pdf, page_width, page_height, additional_text):
+    if not additional_text:
+        return
+
+    additional_font_path = content_config.get("additional_font_path") or content_config.get("font_path")
+    if not additional_font_path:
+        logging.warning("Skipping additional text because no additional font path is configured.")
+        return
+
+    if not os.path.exists(additional_font_path):
+        logging.error("Additional font file not found at %s", additional_font_path)
+        raise FileNotFoundError(f"Additional font file not found: {additional_font_path}")
+
+    additional_font_size = _safe_float(content_config.get("additional_font_size"))
+    if additional_font_size is None:
+        raise ValueError("Invalid or missing additional_font_size in content configuration.")
+
+    additional_x = _safe_float(content_config.get("additional_text_x"))
+    additional_y = _safe_float(content_config.get("additional_text_y"))
+    if additional_x is None or additional_y is None:
+        raise ValueError("additional_text_x and additional_text_y must be configured for Additional text.")
+
+    pdf.add_font("AdditionalFont", "", additional_font_path)
+    pdf.set_font("AdditionalFont", "", additional_font_size)
+    apply_text_color(pdf, content_config.get("text_color"))
+
+    max_width = max(page_width - additional_x, 0)
+    if pdf.get_string_width(additional_text) > max_width:
+        logging.warning(
+            "Additional text may overflow the page for '%s'; configured x=%s leaves %.2fmm width.",
+            additional_text,
+            additional_x,
+            max_width,
+        )
+
+    if additional_y > page_height:
+        logging.warning(
+            "Additional text baseline y=%s exceeds page height %.2fmm.",
+            additional_y,
+            page_height,
+        )
+
+    pdf.text(additional_x, additional_y, additional_text)
+
+
+def generate_certificate(name, surname, email, additional_text=""):
 
     orientation = content_config.get("orientation", "L").upper()
     pdf = FPDF(orientation=orientation, unit="mm", format="A4")
@@ -275,6 +328,9 @@ def generate_certificate(name, surname, email):
     else:
         name_x = calculate_text_center(pdf, full_name, page_width)
         pdf.text(name_x, baseline_y, full_name)
+
+    draw_additional_text(pdf, page_width, page_height, additional_text)
+
     filename = f"./certificates/{name}_{surname}.pdf"
     os.makedirs("certificates", exist_ok=True)
 
@@ -333,8 +389,11 @@ def process_csv(file_path, debug_mode_label, should_send_email):
     print(f"Debug Mode: {debug_mode_label}")
 
     for position, (_, row) in enumerate(data.iterrows(), start=1):
-        name, surname, receiver_email = row["FirstName"], row["LastName"], row["Email"]
-        pdf_path = generate_certificate(name, surname, receiver_email)
+        name = normalize_optional_text(row["FirstName"])
+        surname = normalize_optional_text(row["LastName"])
+        receiver_email = normalize_optional_text(row["Email"])
+        additional_text = normalize_optional_text(row.get("Additional", ""))
+        pdf_path = generate_certificate(name, surname, receiver_email, additional_text)
         logging.info(
             "Progress: %d/%d (%.1f%%) certificates prepared",
             position,
@@ -348,7 +407,14 @@ def process_csv(file_path, debug_mode_label, should_send_email):
             msg = prepare_email_content(receiver_email, name, pdf_path)
             send_email(receiver_email, msg)
 
-if __name__ == "__main__":
+def main():
+    global content_config
+    global email_config
+    global smtp_server
+    global smtp_port
+    global email_sender
+    global email_password
+
     content_config_files = ["./config/content_config.json"]
     email_config_files = ["./config/email_config.json"]
     smtp_config_files = ["./config/smtp_config.json"]
@@ -368,3 +434,23 @@ if __name__ == "__main__":
     csv_file = "participants.csv"
     process_csv(csv_file, debug_mode_label, should_send_email)
 
+
+def pause_before_exit():
+    try:
+        if os.name == "nt":
+            os.system("pause")
+        else:
+            input("Press ENTER to exit")
+    except Exception:
+        pass
+
+
+if __name__ == "__main__":
+    try:
+        main()
+    except Exception:
+        print("\nAn error occurred:\n")
+        traceback.print_exc()
+        logging.exception("Unhandled error while running generator")
+    finally:
+        pause_before_exit()

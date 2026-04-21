@@ -29,6 +29,10 @@ DEFAULT_VALUES = {
     "split_name_line_gap": "",
     "split_name_font_size": "",
     "split_name_text_y": "",
+    "additional_font_path": "",
+    "additional_font_size": "",
+    "additional_text_x": "",
+    "additional_text_y": "",
     "orientation": "L",
     "text_color": "#000000",
 }
@@ -53,6 +57,7 @@ class ConfigGUI:
 
         self.vars = {key: tk.StringVar(value=value) for key, value in DEFAULT_VALUES.items()}
         self.preview_name_var = tk.StringVar(value="Sample Recipient")
+        self.preview_additional_var = tk.StringVar(value="80% course completion")
         self.path_var = tk.StringVar(value="(unsaved)")
         self.status_var = tk.StringVar(value="")
 
@@ -192,6 +197,21 @@ class ConfigGUI:
         row += 1
         self._build_simple_entry(frame, row, "Split Name Baseline Y (mm)", "split_name_text_y")
         row += 1
+        self._build_path_entry(
+            frame,
+            row,
+            label="Additional Font File",
+            key="additional_font_path",
+            dialog_title="Select Additional Font File",
+            filetypes=[("TrueType font", "*.ttf;*.otf"), ("All files", "*.*")],
+        )
+        row += 2
+        self._build_simple_entry(frame, row, "Additional Font Size (pt)", "additional_font_size")
+        row += 1
+        self._build_simple_entry(frame, row, "Additional Text X (mm)", "additional_text_x")
+        row += 1
+        self._build_simple_entry(frame, row, "Additional Text Y (mm)", "additional_text_y")
+        row += 1
 
         ttk.Label(frame, text="Orientation").grid(row=row, column=0, sticky="w", pady=(10, 0))
         orientation_box = ttk.Combobox(
@@ -214,6 +234,12 @@ class ConfigGUI:
 
         ttk.Label(frame, text="Preview Name").grid(row=row, column=0, sticky="w", pady=(10, 0))
         ttk.Entry(frame, textvariable=self.preview_name_var).grid(
+            row=row, column=1, columnspan=2, sticky="ew", pady=(10, 0)
+        )
+        row += 1
+
+        ttk.Label(frame, text="Preview Additional").grid(row=row, column=0, sticky="w", pady=(10, 0))
+        ttk.Entry(frame, textvariable=self.preview_additional_var).grid(
             row=row, column=1, columnspan=2, sticky="ew", pady=(10, 0)
         )
         row += 1
@@ -305,7 +331,7 @@ class ConfigGUI:
             justify="left",
         ).grid(row=row, column=0, sticky="w", pady=(12, 0))
 
-        self._set_participants_columns(["FirstName", "LastName", "Email"])
+        self._set_participants_columns(["FirstName", "LastName", "Email", "Additional"])
 
     def _build_email_tab(self, frame: ttk.Frame) -> None:
         frame.columnconfigure(0, weight=1)
@@ -586,6 +612,7 @@ class ConfigGUI:
         for var in self.vars.values():
             var.trace_add("write", lambda *_args: self.schedule_preview_update())
         self.preview_name_var.trace_add("write", lambda *_args: self.schedule_preview_update())
+        self.preview_additional_var.trace_add("write", lambda *_args: self.schedule_preview_update())
 
     def _build_simple_entry(self, parent: ttk.Frame, row: int, label: str, key: str) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
@@ -722,6 +749,18 @@ class ConfigGUI:
                     messagebox.showerror("Invalid Value", "Split name baseline must be numeric.")
                     return None
                 config[key] = int(split_baseline) if split_baseline.is_integer() else split_baseline
+            elif key == "additional_font_size":
+                additional_font_size = self._safe_float(value)
+                if additional_font_size is None:
+                    messagebox.showerror("Invalid Value", "Additional font size must be numeric.")
+                    return None
+                config[key] = int(additional_font_size) if additional_font_size.is_integer() else additional_font_size
+            elif key in {"additional_text_x", "additional_text_y"}:
+                additional_position = self._safe_float(value)
+                if additional_position is None:
+                    messagebox.showerror("Invalid Value", f"{key} must be numeric.")
+                    return None
+                config[key] = int(additional_position) if additional_position.is_integer() else additional_position
             elif key == "orientation":
                 config[key] = value.upper() if value.upper() in {"L", "P"} else "L"
             else:
@@ -781,7 +820,8 @@ class ConfigGUI:
                 if not columns:
                     raise ValueError("CSV file does not contain a header row.")
 
-                self._set_participants_columns(columns)
+                normalized_columns = self._normalize_participant_columns(columns)
+                self._set_participants_columns(normalized_columns)
                 if self.participants_tree is not None:
                     self.participants_tree.delete(*self.participants_tree.get_children())
                     for row in reader:
@@ -1083,6 +1123,7 @@ class ConfigGUI:
 
         draw = ImageDraw.Draw(image)
         preview_text = self.preview_name_var.get().strip() or "Sample Recipient"
+        preview_additional = self.preview_additional_var.get().strip()
 
         first_line = second_line = ""
         initial_split = self._should_split_preview_name(preview_text)
@@ -1114,6 +1155,16 @@ class ConfigGUI:
                 top_px = self._baseline_to_top_px(font, baseline_px)
                 text_x = self._center_text_x(draw, image.width, preview_text, font)
                 draw.text((text_x, top_px), preview_text, font=font, fill=color)
+
+            self._draw_preview_additional_text(
+                draw=draw,
+                image_width=image.width,
+                image_height=image.height,
+                page_width_mm=page_width_mm,
+                page_height_mm=page_height_mm,
+                text=preview_additional,
+                color=color,
+            )
         except OSError as exc:
             logging.exception("Failed to draw text onto preview: %s", exc)
 
@@ -1236,7 +1287,21 @@ class ConfigGUI:
         return image
 
     def _load_preview_font(self, page_height_mm: float, image_height: int, font_size_pt: float) -> ImageFont.ImageFont:
-        font_path = Path(self.vars["font_path"].get())
+        return self._load_preview_font_from_path(
+            self.vars["font_path"].get(),
+            page_height_mm,
+            image_height,
+            font_size_pt,
+        )
+
+    def _load_preview_font_from_path(
+        self,
+        font_path_value: str,
+        page_height_mm: float,
+        image_height: int,
+        font_size_pt: float,
+    ) -> ImageFont.ImageFont:
+        font_path = Path(font_path_value)
         font_size_pt = font_size_pt or 32.0
         font_size_mm = self._pt_to_mm(font_size_pt)
         font_size_px = max(
@@ -1248,6 +1313,33 @@ class ConfigGUI:
         except (OSError, ValueError):
             logging.warning("Falling back to default font for preview. Invalid font path: %s", font_path)
             return ImageFont.load_default()
+
+    def _draw_preview_additional_text(
+        self,
+        *,
+        draw: ImageDraw.ImageDraw,
+        image_width: int,
+        image_height: int,
+        page_width_mm: float,
+        page_height_mm: float,
+        text: str,
+        color: str,
+    ) -> None:
+        if not text:
+            return
+
+        additional_font_size = self._safe_float(self.vars["additional_font_size"].get())
+        additional_x = self._safe_float(self.vars["additional_text_x"].get())
+        additional_y = self._safe_float(self.vars["additional_text_y"].get())
+        if additional_font_size is None or additional_x is None or additional_y is None:
+            return
+
+        font_path = self.vars["additional_font_path"].get().strip() or self.vars["font_path"].get().strip()
+        font = self._load_preview_font_from_path(font_path, page_height_mm, image_height, additional_font_size)
+        x_px = self._mm_to_pixels(additional_x, page_width_mm, image_width)
+        baseline_px = self._mm_to_pixels(additional_y, page_height_mm, image_height)
+        top_px = self._baseline_to_top_px(font, baseline_px)
+        draw.text((int(round(x_px)), top_px), text, font=font, fill=color)
 
     def _resolve_baseline_mm(self, font_size_pt: float, baseline_override: Optional[float]) -> float:
         if baseline_override is not None:
@@ -1320,6 +1412,29 @@ class ConfigGUI:
         if isinstance(value, str) and len(value) in {4, 7} and value.startswith("#"):
             return value
         return "#000000"
+
+    @staticmethod
+    def _normalize_participant_columns(columns: List[str]) -> List[str]:
+        standard_columns = ["FirstName", "LastName", "Email", "Additional"]
+        normalized = []
+        seen = set()
+
+        for column in standard_columns:
+            if column in columns:
+                normalized.append(column)
+                seen.add(column)
+
+        for column in standard_columns:
+            if column not in seen:
+                normalized.append(column)
+                seen.add(column)
+
+        for column in columns:
+            if column and column not in seen:
+                normalized.append(column)
+                seen.add(column)
+
+        return normalized
 
 
 def main() -> None:
