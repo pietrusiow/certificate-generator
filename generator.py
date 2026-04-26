@@ -14,6 +14,8 @@ from email.utils import formataddr
 from email import encoders
 from fpdf import FPDF
 
+MAX_CUSTOM_FIELDS = 5
+
 # Set up logging
 logging.basicConfig(
     level=logging.INFO,
@@ -234,52 +236,83 @@ def normalize_optional_text(value):
     return str(value).strip()
 
 
-def draw_additional_text(pdf, page_width, page_height, additional_text):
-    if not additional_text:
+def get_custom_field_configs(config):
+    fields = []
+    seen_names = set()
+    for index in range(1, MAX_CUSTOM_FIELDS + 1):
+        name = normalize_optional_text(config.get(f"custom_field_{index}_name", ""))
+        if not name:
+            continue
+        if name in seen_names:
+            logging.warning("Skipping duplicate custom field name '%s' in slot %d.", name, index)
+            continue
+        seen_names.add(name)
+
+        fields.append(
+            {
+                "index": index,
+                "name": name,
+                "font_path": config.get(f"custom_field_{index}_font_path") or config.get("font_path"),
+                "font_size": _safe_float(config.get(f"custom_field_{index}_font_size")),
+                "text_x": _safe_float(config.get(f"custom_field_{index}_text_x")),
+                "text_y": _safe_float(config.get(f"custom_field_{index}_text_y")),
+                "text_color": config.get(f"custom_field_{index}_text_color") or config.get("text_color"),
+            }
+        )
+    return fields
+
+
+def draw_custom_field_text(pdf, page_width, page_height, field_config, field_value):
+    if not field_value:
         return
 
-    additional_font_path = content_config.get("additional_font_path") or content_config.get("font_path")
-    if not additional_font_path:
-        logging.warning("Skipping additional text because no additional font path is configured.")
+    field_name = field_config["name"]
+    font_path = field_config["font_path"]
+    if not font_path:
+        logging.warning("Skipping custom field '%s' because no font path is configured.", field_name)
         return
 
-    if not os.path.exists(additional_font_path):
-        logging.error("Additional font file not found at %s", additional_font_path)
-        raise FileNotFoundError(f"Additional font file not found: {additional_font_path}")
+    if not os.path.exists(font_path):
+        logging.error("Custom field font file not found at %s for field '%s'", font_path, field_name)
+        raise FileNotFoundError(f"Custom field font file not found: {font_path}")
 
-    additional_font_size = _safe_float(content_config.get("additional_font_size"))
-    if additional_font_size is None:
-        raise ValueError("Invalid or missing additional_font_size in content configuration.")
+    font_size = field_config["font_size"]
+    text_x = field_config["text_x"]
+    text_y = field_config["text_y"]
+    if font_size is None:
+        raise ValueError(f"Invalid or missing font size for custom field '{field_name}'.")
+    if text_x is None or text_y is None:
+        raise ValueError(f"text_x and text_y must be configured for custom field '{field_name}'.")
 
-    additional_x = _safe_float(content_config.get("additional_text_x"))
-    additional_y = _safe_float(content_config.get("additional_text_y"))
-    if additional_x is None or additional_y is None:
-        raise ValueError("additional_text_x and additional_text_y must be configured for Additional text.")
+    font_alias = f"CustomFieldFont{field_config['index']}"
+    pdf.add_font(font_alias, "", font_path)
+    pdf.set_font(font_alias, "", font_size)
+    apply_text_color(pdf, field_config.get("text_color"))
 
-    pdf.add_font("AdditionalFont", "", additional_font_path)
-    pdf.set_font("AdditionalFont", "", additional_font_size)
-    apply_text_color(pdf, content_config.get("text_color"))
-
-    max_width = max(page_width - additional_x, 0)
-    if pdf.get_string_width(additional_text) > max_width:
+    max_width = max(page_width - text_x, 0)
+    if pdf.get_string_width(field_value) > max_width:
         logging.warning(
-            "Additional text may overflow the page for '%s'; configured x=%s leaves %.2fmm width.",
-            additional_text,
-            additional_x,
+            "Custom field '%s' may overflow for value '%s'; configured x=%s leaves %.2fmm width.",
+            field_name,
+            field_value,
+            text_x,
             max_width,
         )
 
-    if additional_y > page_height:
+    if text_y > page_height:
         logging.warning(
-            "Additional text baseline y=%s exceeds page height %.2fmm.",
-            additional_y,
+            "Custom field '%s' baseline y=%s exceeds page height %.2fmm.",
+            field_name,
+            text_y,
             page_height,
         )
 
-    pdf.text(additional_x, additional_y, additional_text)
+    pdf.text(text_x, text_y, field_value)
 
 
-def generate_certificate(name, surname, email, additional_text=""):
+def generate_certificate(name, surname, email, custom_field_values=None):
+    if custom_field_values is None:
+        custom_field_values = {}
 
     orientation = content_config.get("orientation", "L").upper()
     pdf = FPDF(orientation=orientation, unit="mm", format="A4")
@@ -329,7 +362,14 @@ def generate_certificate(name, surname, email, additional_text=""):
         name_x = calculate_text_center(pdf, full_name, page_width)
         pdf.text(name_x, baseline_y, full_name)
 
-    draw_additional_text(pdf, page_width, page_height, additional_text)
+    for field_config in get_custom_field_configs(content_config):
+        draw_custom_field_text(
+            pdf,
+            page_width,
+            page_height,
+            field_config,
+            normalize_optional_text(custom_field_values.get(field_config["name"], "")),
+        )
 
     filename = f"./certificates/{name}_{surname}.pdf"
     os.makedirs("certificates", exist_ok=True)
@@ -387,13 +427,46 @@ def process_csv(file_path, debug_mode_label, should_send_email):
         return
 
     print(f"Debug Mode: {debug_mode_label}")
+    custom_field_configs = get_custom_field_configs(content_config)
+    available_columns = set(data.columns)
+    missing_custom_columns = [
+        field_config["name"] for field_config in custom_field_configs if field_config["name"] not in available_columns
+    ]
+
+    if missing_custom_columns:
+        warning_message = (
+            f"CSV is missing configured custom field columns: {', '.join(missing_custom_columns)}. "
+            f"Available columns: {', '.join(str(column) for column in data.columns)}"
+        )
+        logging.warning(warning_message)
+        print(f"Warning: {warning_message}")
 
     for position, (_, row) in enumerate(data.iterrows(), start=1):
         name = normalize_optional_text(row["FirstName"])
         surname = normalize_optional_text(row["LastName"])
         receiver_email = normalize_optional_text(row["Email"])
-        additional_text = normalize_optional_text(row.get("Additional", ""))
-        pdf_path = generate_certificate(name, surname, receiver_email, additional_text)
+        custom_field_values = {
+            field_config["name"]: normalize_optional_text(row.get(field_config["name"], ""))
+            for field_config in custom_field_configs
+        }
+
+        # Backward compatibility for older CSV files that still use a single `Additional` column.
+        if "Additional" in available_columns and custom_field_configs:
+            first_field_name = custom_field_configs[0]["name"]
+            if not custom_field_values.get(first_field_name):
+                custom_field_values[first_field_name] = normalize_optional_text(row.get("Additional", ""))
+
+        missing_fields_for_email = [
+            field_config["name"]
+            for field_config in custom_field_configs
+            if not normalize_optional_text(custom_field_values.get(field_config["name"], ""))
+        ]
+        if missing_fields_for_email:
+            per_email_warning = f"{receiver_email} is missing {', '.join(missing_fields_for_email)}"
+            logging.warning(per_email_warning)
+            print(per_email_warning)
+
+        pdf_path = generate_certificate(name, surname, receiver_email, custom_field_values)
         logging.info(
             "Progress: %d/%d (%.1f%%) certificates prepared",
             position,

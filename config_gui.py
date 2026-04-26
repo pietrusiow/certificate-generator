@@ -17,7 +17,8 @@ except ImportError as exc:  # pragma: no cover - handled at runtime
 DEFAULT_CONFIG_PATH = Path("config/content_config.json")
 PREVIEW_MAX_WIDTH = 900
 PREVIEW_MAX_HEIGHT = 600
-DEFAULT_VALUES = {
+MAX_CUSTOM_FIELDS = 5
+BASE_DEFAULT_VALUES = {
     "background_image": "./background/sample.png",
     "font_path": "./fonts/Lato/Lato-Black.ttf",
     "font_size": "32",
@@ -29,13 +30,17 @@ DEFAULT_VALUES = {
     "split_name_line_gap": "",
     "split_name_font_size": "",
     "split_name_text_y": "",
-    "additional_font_path": "",
-    "additional_font_size": "",
-    "additional_text_x": "",
-    "additional_text_y": "",
     "orientation": "L",
     "text_color": "#000000",
 }
+DEFAULT_VALUES = dict(BASE_DEFAULT_VALUES)
+for _index in range(1, MAX_CUSTOM_FIELDS + 1):
+    DEFAULT_VALUES[f"custom_field_{_index}_name"] = ""
+    DEFAULT_VALUES[f"custom_field_{_index}_font_path"] = ""
+    DEFAULT_VALUES[f"custom_field_{_index}_font_size"] = ""
+    DEFAULT_VALUES[f"custom_field_{_index}_text_x"] = ""
+    DEFAULT_VALUES[f"custom_field_{_index}_text_y"] = ""
+    DEFAULT_VALUES[f"custom_field_{_index}_text_color"] = ""
 
 EMAIL_CONFIG_PATH = Path("config/email_config.json")
 SMTP_CONFIG_PATH = Path("config/smtp_config.json")
@@ -54,10 +59,16 @@ class ConfigGUI:
         self.preview_after_id: Optional[str] = None
         self.preview_image = None
         self.preview_photo = None
+        self.visible_custom_fields = 0
+        self.content_form_frame: Optional[ttk.Frame] = None
+        self.content_canvas: Optional[tk.Canvas] = None
+        self.content_canvas_window_id: Optional[int] = None
 
         self.vars = {key: tk.StringVar(value=value) for key, value in DEFAULT_VALUES.items()}
         self.preview_name_var = tk.StringVar(value="Sample Recipient")
-        self.preview_additional_var = tk.StringVar(value="80% course completion")
+        self.preview_custom_field_vars = {
+            index: tk.StringVar(value=f"Sample value {index}") for index in range(1, MAX_CUSTOM_FIELDS + 1)
+        }
         self.path_var = tk.StringVar(value="(unsaved)")
         self.status_var = tk.StringVar(value="")
 
@@ -143,6 +154,46 @@ class ConfigGUI:
         self._update_preview_visibility()
 
     def _build_content_tab(self, frame: ttk.Frame) -> None:
+        frame.columnconfigure(0, weight=1)
+        frame.rowconfigure(0, weight=1)
+
+        content_canvas = tk.Canvas(frame, highlightthickness=0)
+        content_scrollbar = ttk.Scrollbar(frame, orient="vertical", command=content_canvas.yview)
+        content_canvas.configure(yscrollcommand=content_scrollbar.set)
+
+        content_canvas.grid(row=0, column=0, sticky="nsew")
+        content_scrollbar.grid(row=0, column=1, sticky="ns")
+
+        inner_frame = ttk.Frame(content_canvas, padding=(0, 0, 10, 10))
+        self.content_canvas_window_id = content_canvas.create_window((0, 0), window=inner_frame, anchor="nw")
+
+        inner_frame.bind(
+            "<Configure>",
+            lambda event: content_canvas.configure(scrollregion=content_canvas.bbox("all")),
+        )
+        content_canvas.bind(
+            "<Configure>",
+            lambda event: self._resize_content_canvas_window(event.width),
+        )
+
+        self.content_canvas = content_canvas
+        self.content_form_frame = inner_frame
+        self._render_content_tab()
+
+    def _resize_content_canvas_window(self, width: int) -> None:
+        if self.content_canvas is None or self.content_canvas_window_id is None:
+            return
+        self.content_canvas.itemconfigure(self.content_canvas_window_id, width=width)
+
+    def _render_content_tab(self) -> None:
+        if self.content_form_frame is None:
+            return
+
+        for child in self.content_form_frame.winfo_children():
+            child.destroy()
+
+        frame = self.content_form_frame
+
         ttk.Label(frame, text="Configuration File").grid(row=0, column=0, sticky="w")
         ttk.Label(frame, textvariable=self.path_var, foreground="#555555", wraplength=260, justify="left").grid(
             row=1, column=0, columnspan=3, sticky="w", pady=(0, 10)
@@ -197,21 +248,6 @@ class ConfigGUI:
         row += 1
         self._build_simple_entry(frame, row, "Split Name Baseline Y (mm)", "split_name_text_y")
         row += 1
-        self._build_path_entry(
-            frame,
-            row,
-            label="Additional Font File",
-            key="additional_font_path",
-            dialog_title="Select Additional Font File",
-            filetypes=[("TrueType font", "*.ttf;*.otf"), ("All files", "*.*")],
-        )
-        row += 2
-        self._build_simple_entry(frame, row, "Additional Font Size (pt)", "additional_font_size")
-        row += 1
-        self._build_simple_entry(frame, row, "Additional Text X (mm)", "additional_text_x")
-        row += 1
-        self._build_simple_entry(frame, row, "Additional Text Y (mm)", "additional_text_y")
-        row += 1
 
         ttk.Label(frame, text="Orientation").grid(row=row, column=0, sticky="w", pady=(10, 0))
         orientation_box = ttk.Combobox(
@@ -238,11 +274,55 @@ class ConfigGUI:
         )
         row += 1
 
-        ttk.Label(frame, text="Preview Additional").grid(row=row, column=0, sticky="w", pady=(10, 0))
-        ttk.Entry(frame, textvariable=self.preview_additional_var).grid(
-            row=row, column=1, columnspan=2, sticky="ew", pady=(10, 0)
+        preview_custom_frame = ttk.LabelFrame(frame, text="Preview Custom Field Values")
+        preview_custom_frame.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(10, 0))
+        preview_custom_frame.columnconfigure(1, weight=1)
+        for index in range(1, self.visible_custom_fields + 1):
+            ttk.Label(preview_custom_frame, text=f"Field {index}").grid(row=index - 1, column=0, sticky="w", padx=5, pady=3)
+            ttk.Entry(preview_custom_frame, textvariable=self.preview_custom_field_vars[index]).grid(
+                row=index - 1, column=1, sticky="ew", padx=5, pady=3
+            )
+        row += 1
+
+        custom_controls = ttk.Frame(frame)
+        custom_controls.grid(row=row, column=0, columnspan=3, sticky="ew", pady=(12, 0))
+        custom_controls.columnconfigure(0, weight=1)
+        ttk.Label(custom_controls, text=f"Custom Fields ({self.visible_custom_fields}/{MAX_CUSTOM_FIELDS})").grid(
+            row=0, column=0, sticky="w"
+        )
+        ttk.Button(custom_controls, text="+", width=3, command=self.add_custom_field_section).grid(
+            row=0, column=1, padx=(5, 0)
+        )
+        ttk.Button(custom_controls, text="-", width=3, command=self.remove_custom_field_section).grid(
+            row=0, column=2, padx=(5, 0)
         )
         row += 1
+
+        for index in range(1, self.visible_custom_fields + 1):
+            ttk.Separator(frame, orient="horizontal").grid(row=row, column=0, columnspan=3, sticky="ew", pady=(10, 5))
+            row += 1
+            ttk.Label(frame, text=f"Custom Field {index} Name").grid(row=row, column=0, sticky="w", pady=5)
+            ttk.Entry(frame, textvariable=self.vars[f"custom_field_{index}_name"]).grid(
+                row=row, column=1, columnspan=2, sticky="ew", pady=5
+            )
+            row += 1
+            self._build_path_entry(
+                frame,
+                row,
+                label=f"Custom Field {index} Font",
+                key=f"custom_field_{index}_font_path",
+                dialog_title=f"Select Custom Field {index} Font File",
+                filetypes=[("TrueType font", "*.ttf;*.otf"), ("All files", "*.*")],
+            )
+            row += 2
+            self._build_simple_entry(frame, row, f"Custom Field {index} Font Size (pt)", f"custom_field_{index}_font_size")
+            row += 1
+            self._build_simple_entry(frame, row, f"Custom Field {index} Text X (mm)", f"custom_field_{index}_text_x")
+            row += 1
+            self._build_simple_entry(frame, row, f"Custom Field {index} Text Y (mm)", f"custom_field_{index}_text_y")
+            row += 1
+            self._build_color_entry(frame, row, f"Custom Field {index} Text Color", f"custom_field_{index}_text_color")
+            row += 1
 
         ttk.Button(frame, text="Refresh Preview", command=self.update_preview).grid(
             row=row, column=0, columnspan=3, pady=(15, 0), sticky="ew"
@@ -255,6 +335,10 @@ class ConfigGUI:
 
         for col in range(3):
             frame.columnconfigure(col, weight=1)
+
+        frame.update_idletasks()
+        if self.content_canvas is not None:
+            self.content_canvas.configure(scrollregion=self.content_canvas.bbox("all"))
 
     def _build_participants_tab(self, frame: ttk.Frame) -> None:
         frame.columnconfigure(0, weight=1)
@@ -331,7 +415,7 @@ class ConfigGUI:
             justify="left",
         ).grid(row=row, column=0, sticky="w", pady=(12, 0))
 
-        self._set_participants_columns(["FirstName", "LastName", "Email", "Additional"])
+        self._set_participants_columns(self._get_default_participant_columns())
 
     def _build_email_tab(self, frame: ttk.Frame) -> None:
         frame.columnconfigure(0, weight=1)
@@ -547,6 +631,78 @@ class ConfigGUI:
 
         self._rebuild_participant_form()
 
+    def _get_defined_custom_field_names(self) -> List[str]:
+        names: List[str] = []
+        for index in range(1, self.visible_custom_fields + 1):
+            name = self.vars[f"custom_field_{index}_name"].get().strip()
+            if name and name not in names:
+                names.append(name)
+        return names
+
+    def _get_default_participant_columns(self) -> List[str]:
+        return ["FirstName", "LastName", "Email", *self._get_defined_custom_field_names()]
+
+    def _sync_participant_columns_with_config(self) -> None:
+        desired_columns = self._get_default_participant_columns()
+        current_columns = list(self.participants_columns)
+        if desired_columns == current_columns:
+            return
+
+        existing_rows = []
+        if self.participants_tree is not None:
+            for item in self.participants_tree.get_children():
+                values = self.participants_tree.item(item, "values")
+                row_map = {}
+                for idx, column in enumerate(current_columns):
+                    row_map[column] = values[idx] if idx < len(values) else ""
+                existing_rows.append(row_map)
+
+        self._set_participants_columns(desired_columns)
+
+        if self.participants_tree is not None and existing_rows:
+            self.participants_tree.delete(*self.participants_tree.get_children())
+            for row_map in existing_rows:
+                values = [row_map.get(column, "") for column in self.participants_columns]
+                self.participants_tree.insert("", "end", values=values)
+
+    def _resolve_visible_custom_fields_from_config(self) -> int:
+        highest_visible = 0
+        for index in range(1, MAX_CUSTOM_FIELDS + 1):
+            values = [
+                self.vars[f"custom_field_{index}_name"].get().strip(),
+                self.vars[f"custom_field_{index}_font_path"].get().strip(),
+                self.vars[f"custom_field_{index}_font_size"].get().strip(),
+                self.vars[f"custom_field_{index}_text_x"].get().strip(),
+                self.vars[f"custom_field_{index}_text_y"].get().strip(),
+                self.vars[f"custom_field_{index}_text_color"].get().strip(),
+            ]
+            if any(values):
+                highest_visible = index
+        return highest_visible
+
+    def add_custom_field_section(self) -> None:
+        if self.visible_custom_fields >= MAX_CUSTOM_FIELDS:
+            return
+        self.visible_custom_fields += 1
+        self._render_content_tab()
+        self._sync_participant_columns_with_config()
+
+    def remove_custom_field_section(self) -> None:
+        if self.visible_custom_fields <= 0:
+            return
+
+        index = self.visible_custom_fields
+        self.vars[f"custom_field_{index}_name"].set("")
+        self.vars[f"custom_field_{index}_font_path"].set("")
+        self.vars[f"custom_field_{index}_font_size"].set("")
+        self.vars[f"custom_field_{index}_text_x"].set("")
+        self.vars[f"custom_field_{index}_text_y"].set("")
+        self.vars[f"custom_field_{index}_text_color"].set("")
+        self.preview_custom_field_vars[index].set("")
+        self.visible_custom_fields -= 1
+        self._render_content_tab()
+        self._sync_participant_columns_with_config()
+
     def _rebuild_participant_form(self) -> None:
         if self.participants_form_frame is None:
             return
@@ -612,12 +768,27 @@ class ConfigGUI:
         for var in self.vars.values():
             var.trace_add("write", lambda *_args: self.schedule_preview_update())
         self.preview_name_var.trace_add("write", lambda *_args: self.schedule_preview_update())
-        self.preview_additional_var.trace_add("write", lambda *_args: self.schedule_preview_update())
+        for var in self.preview_custom_field_vars.values():
+            var.trace_add("write", lambda *_args: self.schedule_preview_update())
+        for index in range(1, MAX_CUSTOM_FIELDS + 1):
+            self.vars[f"custom_field_{index}_name"].trace_add(
+                "write", lambda *_args: self._sync_participant_columns_with_config()
+            )
 
     def _build_simple_entry(self, parent: ttk.Frame, row: int, label: str, key: str) -> None:
         ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
         entry = ttk.Entry(parent, textvariable=self.vars[key])
         entry.grid(row=row, column=1, columnspan=2, sticky="ew", pady=5)
+
+    def _build_color_entry(self, parent: ttk.Frame, row: int, label: str, key: str) -> None:
+        ttk.Label(parent, text=label).grid(row=row, column=0, sticky="w", pady=5)
+        color_frame = ttk.Frame(parent)
+        color_frame.grid(row=row, column=1, columnspan=2, sticky="ew", pady=5)
+        color_frame.columnconfigure(0, weight=1)
+        ttk.Entry(color_frame, textvariable=self.vars[key]).grid(row=0, column=0, sticky="ew")
+        ttk.Button(color_frame, text="Pick...", command=lambda: self.choose_color_for_key(key)).grid(
+            row=0, column=1, padx=(5, 0)
+        )
 
     def _build_path_entry(
         self,
@@ -681,7 +852,10 @@ class ConfigGUI:
             else:
                 var.set("")
 
+        self.visible_custom_fields = self._resolve_visible_custom_fields_from_config()
+        self._render_content_tab()
         self.status_var.set(f"Loaded configuration from {path}")
+        self._sync_participant_columns_with_config()
         self.schedule_preview_update()
 
     def collect_config(self) -> Optional[Dict[str, Union[float, int, str]]]:
@@ -749,18 +923,22 @@ class ConfigGUI:
                     messagebox.showerror("Invalid Value", "Split name baseline must be numeric.")
                     return None
                 config[key] = int(split_baseline) if split_baseline.is_integer() else split_baseline
-            elif key == "additional_font_size":
-                additional_font_size = self._safe_float(value)
-                if additional_font_size is None:
-                    messagebox.showerror("Invalid Value", "Additional font size must be numeric.")
-                    return None
-                config[key] = int(additional_font_size) if additional_font_size.is_integer() else additional_font_size
-            elif key in {"additional_text_x", "additional_text_y"}:
-                additional_position = self._safe_float(value)
-                if additional_position is None:
+            elif key.startswith("custom_field_") and key.endswith("_name"):
+                config[key] = value
+            elif key.startswith("custom_field_") and key.endswith("_font_size"):
+                custom_font_size = self._safe_float(value)
+                if custom_font_size is None:
                     messagebox.showerror("Invalid Value", f"{key} must be numeric.")
                     return None
-                config[key] = int(additional_position) if additional_position.is_integer() else additional_position
+                config[key] = int(custom_font_size) if custom_font_size.is_integer() else custom_font_size
+            elif key.startswith("custom_field_") and (key.endswith("_text_x") or key.endswith("_text_y")):
+                custom_position = self._safe_float(value)
+                if custom_position is None:
+                    messagebox.showerror("Invalid Value", f"{key} must be numeric.")
+                    return None
+                config[key] = int(custom_position) if custom_position.is_integer() else custom_position
+            elif key.startswith("custom_field_") and key.endswith("_text_color"):
+                config[key] = value
             elif key == "orientation":
                 config[key] = value.upper() if value.upper() in {"L", "P"} else "L"
             else:
@@ -825,6 +1003,7 @@ class ConfigGUI:
                 if self.participants_tree is not None:
                     self.participants_tree.delete(*self.participants_tree.get_children())
                     for row in reader:
+                        row = self._migrate_legacy_additional_row(dict(row))
                         values = [(row.get(col, "") or "").strip() for col in self.participants_columns]
                         self.participants_tree.insert("", "end", values=values)
                         count += 1
@@ -1123,7 +1302,10 @@ class ConfigGUI:
 
         draw = ImageDraw.Draw(image)
         preview_text = self.preview_name_var.get().strip() or "Sample Recipient"
-        preview_additional = self.preview_additional_var.get().strip()
+        preview_custom_values = {
+            index: self.preview_custom_field_vars[index].get().strip()
+            for index in range(1, MAX_CUSTOM_FIELDS + 1)
+        }
 
         first_line = second_line = ""
         initial_split = self._should_split_preview_name(preview_text)
@@ -1156,13 +1338,13 @@ class ConfigGUI:
                 text_x = self._center_text_x(draw, image.width, preview_text, font)
                 draw.text((text_x, top_px), preview_text, font=font, fill=color)
 
-            self._draw_preview_additional_text(
+            self._draw_preview_custom_fields(
                 draw=draw,
                 image_width=image.width,
                 image_height=image.height,
                 page_width_mm=page_width_mm,
                 page_height_mm=page_height_mm,
-                text=preview_additional,
+                values=preview_custom_values,
                 color=color,
             )
         except OSError as exc:
@@ -1268,6 +1450,12 @@ class ConfigGUI:
         if color_code and color_code[1]:
             self.vars["text_color"].set(color_code[1])
 
+    def choose_color_for_key(self, key: str) -> None:
+        initial = self.vars[key].get().strip() or self.vars["text_color"].get() or "#000000"
+        color_code = colorchooser.askcolor(color=initial)
+        if color_code and color_code[1]:
+            self.vars[key].set(color_code[1])
+
     # ------------------------------------------------------------------ Helpers
     def _select_path_for_key(self, key: str, title: str, filetypes: List[Tuple[str, str]]) -> None:
         initial = self.vars[key].get()
@@ -1314,7 +1502,7 @@ class ConfigGUI:
             logging.warning("Falling back to default font for preview. Invalid font path: %s", font_path)
             return ImageFont.load_default()
 
-    def _draw_preview_additional_text(
+    def _draw_preview_custom_fields(
         self,
         *,
         draw: ImageDraw.ImageDraw,
@@ -1322,24 +1510,33 @@ class ConfigGUI:
         image_height: int,
         page_width_mm: float,
         page_height_mm: float,
-        text: str,
+        values: Dict[int, str],
         color: str,
     ) -> None:
-        if not text:
-            return
+        for index in range(1, MAX_CUSTOM_FIELDS + 1):
+            field_name = self.vars[f"custom_field_{index}_name"].get().strip()
+            field_value = values.get(index, "").strip()
+            if not field_name or not field_value:
+                continue
 
-        additional_font_size = self._safe_float(self.vars["additional_font_size"].get())
-        additional_x = self._safe_float(self.vars["additional_text_x"].get())
-        additional_y = self._safe_float(self.vars["additional_text_y"].get())
-        if additional_font_size is None or additional_x is None or additional_y is None:
-            return
+            font_size = self._safe_float(self.vars[f"custom_field_{index}_font_size"].get())
+            text_x = self._safe_float(self.vars[f"custom_field_{index}_text_x"].get())
+            text_y = self._safe_float(self.vars[f"custom_field_{index}_text_y"].get())
+            if font_size is None or text_x is None or text_y is None:
+                continue
 
-        font_path = self.vars["additional_font_path"].get().strip() or self.vars["font_path"].get().strip()
-        font = self._load_preview_font_from_path(font_path, page_height_mm, image_height, additional_font_size)
-        x_px = self._mm_to_pixels(additional_x, page_width_mm, image_width)
-        baseline_px = self._mm_to_pixels(additional_y, page_height_mm, image_height)
-        top_px = self._baseline_to_top_px(font, baseline_px)
-        draw.text((int(round(x_px)), top_px), text, font=font, fill=color)
+            font_path = (
+                self.vars[f"custom_field_{index}_font_path"].get().strip()
+                or self.vars["font_path"].get().strip()
+            )
+            field_color = self._parse_color(
+                self.vars[f"custom_field_{index}_text_color"].get().strip() or self.vars["text_color"].get()
+            )
+            font = self._load_preview_font_from_path(font_path, page_height_mm, image_height, font_size)
+            x_px = self._mm_to_pixels(text_x, page_width_mm, image_width)
+            baseline_px = self._mm_to_pixels(text_y, page_height_mm, image_height)
+            top_px = self._baseline_to_top_px(font, baseline_px)
+            draw.text((int(round(x_px)), top_px), field_value, font=font, fill=field_color)
 
     def _resolve_baseline_mm(self, font_size_pt: float, baseline_override: Optional[float]) -> float:
         if baseline_override is not None:
@@ -1413,9 +1610,8 @@ class ConfigGUI:
             return value
         return "#000000"
 
-    @staticmethod
-    def _normalize_participant_columns(columns: List[str]) -> List[str]:
-        standard_columns = ["FirstName", "LastName", "Email", "Additional"]
+    def _normalize_participant_columns(self, columns: List[str]) -> List[str]:
+        standard_columns = ["FirstName", "LastName", "Email"]
         normalized = []
         seen = set()
 
@@ -1429,12 +1625,37 @@ class ConfigGUI:
                 normalized.append(column)
                 seen.add(column)
 
+        for column in self._get_defined_custom_field_names():
+            if column not in seen:
+                normalized.append(column)
+                seen.add(column)
+
         for column in columns:
+            if column == "Additional":
+                continue
             if column and column not in seen:
                 normalized.append(column)
                 seen.add(column)
 
         return normalized
+
+    def _migrate_legacy_additional_row(self, row: Dict[str, str]) -> Dict[str, str]:
+        if "Additional" not in row:
+            return row
+
+        custom_field_names = self._get_defined_custom_field_names()
+        if not custom_field_names:
+            row.pop("Additional", None)
+            return row
+
+        first_custom_field = custom_field_names[0]
+        additional_value = (row.get("Additional", "") or "").strip()
+        current_value = (row.get(first_custom_field, "") or "").strip()
+        if additional_value and not current_value:
+            row[first_custom_field] = additional_value
+
+        row.pop("Additional", None)
+        return row
 
 
 def main() -> None:

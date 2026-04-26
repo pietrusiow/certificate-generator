@@ -4,6 +4,11 @@
 
 This script generates personalized certificates for participants and automatically sends them via email. The configuration is handled through JSON files, making it easy to use without any coding knowledge.
 
+The generator supports:
+- recipient names with configurable layout rules,
+- up to 5 custom certificate fields defined by the user,
+- CSV editing and live preview through `config_gui.py`.
+
 ## Prerequisites
 
 Before running the script, ensure you have the following installed on your system:
@@ -139,6 +144,11 @@ Controls the certificate appearance.
     "font_size": 32,
     "background_image": "./background/fancyone.jpg",
     "text_y": 192,
+    "custom_field_1_name": "CourseCompletion",
+    "custom_field_1_font_path": "./fonts/Lato2OFL/Lato-Black.ttf",
+    "custom_field_1_font_size": 20,
+    "custom_field_1_text_x": 40,
+    "custom_field_1_text_y": 220,
     "orientation": "L"
 }
 ```
@@ -148,6 +158,14 @@ Controls the certificate appearance.
 - `text_y`: Baseline (in millimetres) where the recipient's name is drawn.
 - `background_image`: Background image for the certificate.
 - `orientation`: "L" for landscape, "P" for portrait.
+- `custom_field_1_name` to `custom_field_5_name`: Optional CSV column names for additional values placed on the certificate.
+- `custom_field_X_font_path`: Optional font file for field `X`. If omitted, the main `font_path` is used.
+- `custom_field_X_font_size`: Font size for field `X`.
+- `custom_field_X_text_x`: Horizontal position in millimetres for field `X`.
+- `custom_field_X_text_y`: Baseline position in millimetres for field `X`.
+- `custom_field_X_text_color`: Optional text color for field `X`. If omitted, the main `text_color` is used.
+
+Only fields with a non-empty `custom_field_X_name` are active.
 
 ## CSV File Format
 
@@ -158,6 +176,20 @@ FirstName,LastName,Email
 John,Doe,john.doe@example.com
 Jane,Smith,jane.smith@example.com
 ```
+
+If you define custom fields in `content_config.json`, add matching columns to the CSV. Example with two custom fields:
+
+```
+FirstName,LastName,Email,CourseCompletion,GroupName
+John,Doe,john.doe@example.com,80%,Group A
+Jane,Smith,jane.smith@example.com,100%,Group B
+```
+
+Rules:
+- `FirstName`, `LastName`, and `Email` are always required.
+- You can define up to 5 custom fields.
+- CSV headers for custom fields must exactly match the configured `custom_field_X_name` values.
+- Empty custom field cells are allowed; the generator simply skips drawing them.
 
 ## Running the Script
 
@@ -174,7 +206,11 @@ Jane,Smith,jane.smith@example.com
    python config_gui.py
    ```
    
-   This lets you preview the background, adjust font settings, and save the updated `content_config.json`.
+   This lets you:
+   - preview the background and recipient name,
+   - configure up to 5 custom fields with their own names, font files, font sizes, and positions,
+   - edit the participants CSV using the current field names from the layout configuration,
+   - save the updated `content_config.json`.
 
 4. Generate certificates (and optionally send emails):
    
